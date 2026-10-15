@@ -1,0 +1,15 @@
+{
+  "description": "Smoke test configuration for rapid end-to-end verification",
+  "files": [
+    "sup_003",
+    "sup_005",
+    "sup_008",
+    "twi_028",
+    "twi_050"
+  ],
+  "max_pairs_per_file": 3,
+  "gap_linear": 8.0,
+  "gap_affine_open": 10.0,
+  "gap_affine_extend": 1.0,
+  "pssm_pseudocount": 1.0
+}

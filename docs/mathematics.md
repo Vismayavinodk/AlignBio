@@ -258,33 +258,112 @@ Traceback commences at $(i^*, j^*)$ in state $M$ and halts as soon as the score 
 
 ---
 
-## 8. Position-Specific Scoring Matrices (PSSMs)
+## 8. Position-Specific Scoring Matrices (PSSMs) and Profiles
 
-### 8.1 Motivation
-Standard substitution matrices assume that residue mutability is uniform across all positions in a protein. In reality, functional active sites and hydrophobic core residues are strictly conserved, whereas surface loop residues mutate freely. A **Position-Specific Scoring Matrix (PSSM)** captures site-specific evolutionary constraints across a protein family.
+### 8.1 Motivation: Context-Dependent Conservation
+Standard substitution matrices (e.g. BLOSUM62, PAM250) treat amino acid mutability as spatially uniform: a tryptophan-to-arginine mismatch ($W \to R$) receives score $-3$ everywhere in every protein. In real proteins, however, evolutionary pressure is highly position-dependent:
+- In catalytic active sites and the hydrophobic core, mutations disrupt stability or function and are eliminated by purifying selection.
+- In solvent-exposed surface loops, mutations are neutral and accumulate freely.
+A **Position-Specific Scoring Matrix (PSSM)** captures site-specific evolutionary preferences across a homologous protein family.
 
-### 8.2 Construction from Multiple Sequence Alignment
-Consider a multiple sequence alignment (MSA) of $N$ homologous sequences across $L$ aligned columns:
+### 8.2 Profile Construction from Multiple Sequence Alignment
+Let an alignment of $M$ homologous sequences over length $L$ be given. For column $i \in \{0, \dots, L-1\}$ and standard amino acid $a \in \Sigma$:
 
-#### 1. Raw Observed Counts
-For column $k \in \{1, \dots, L\}$ and amino acid $a \in \Sigma$, let $c_k(a)$ be the observed count of residue $a$ in column $k$ (ignoring gap characters). The effective depth is $N_k = \sum_{a \in \Sigma} c_k(a)$.
+#### 1. Observed Residue Counts and Gap Policy
+- $c_{i, a} = \sum_{k=1}^M \mathbb{I}(s_{k, i} == a)$
+- $N_i = \sum_{a \in \Sigma} c_{i, a}$ (effective non-gap observation depth)
+- $f_{\text{gap}, i} = \frac{\sum_{k=1}^M \mathbb{I}(s_{k, i} \in \{'-', '.'\})}{M}$
 
-#### 2. Pseudocount Regularization
-To prevent $\log(0) = -\infty$ for unseen residues and incorporate biochemical prior knowledge, we regularize observed frequencies using pseudocounts.
-Under a Dirichlet mixture prior (or Laplace pseudocounts):
-$$f_k(a) = \frac{c_k(a) + B \cdot p_a}{N_k + B}$$
-where $p_a$ is the proteome-wide background frequency of amino acid $a$, and $B$ is the pseudocount weight parameter (e.g. $B = \sqrt{N}$ or constant $B = 1.0$).
+> [!IMPORTANT]
+> **Gap Policy**: Gap characters are indel events, not amino acid mutations. They are recorded in $f_{\text{gap}, i}$ for structural analysis but excluded from the amino acid count denominator $N_i$. If an entire column consists of gaps ($N_i = 0$), the frequency distribution defaults smoothly to the background prior $q_a$.
 
-#### 3. Log-Odds Scoring Matrix
-The position-specific log-odds score $P(k, a)$ for residue $a \in \Sigma$ at position $k$ is:
-$$P(k, a) = \frac{1}{\lambda} \log \left( \frac{f_k(a)}{p_a} \right)$$
-where $\lambda$ is a scale factor ensuring compatibility with substitution matrix scores.
+#### 2. Pseudocount Regularization (Dirichlet Prior / Laplace Smoothing)
+Small sample sizes ($M \ll 20$) lead to zero counts ($c_{i, a} = 0$), causing undefined log-odds ($\log(0) = -\infty$). Regularized frequencies are computed via:
+$$P_{i, a} = \frac{c_{i, a} + \alpha \cdot q_a}{N_i + \alpha}$$
+where:
+- $\alpha \ge 0$ is the pseudocount weight (strength of the prior).
+- $q_a > 0$ is the background proteome frequency ($\sum_{a \in \Sigma} q_a = 1.0$), by default Robinson & Robinson (1991).
 
-### 8.3 Profile-to-Sequence Dynamic Programming
-When aligning a query sequence $Y = (y_1, \dots, y_n)$ against a PSSM profile $P$ of length $m$:
-- The pairwise score $S(x_i, y_j)$ in Needleman–Wunsch or Smith–Waterman is replaced by the position-specific score:
-  $$S(x_i, y_j) \longrightarrow P(i, y_j)$$
-- All recurrence relations, affine gap state transitions, and traceback mechanics remain identical, operating in $\mathcal{O}(m \cdot n)$ time.
+Notice that for all $i$:
+$$\sum_{a \in \Sigma} P_{i, a} = \frac{\sum_a c_{i, a} + \alpha \sum_a q_a}{N_i + \alpha} = \frac{N_i + \alpha}{N_i + \alpha} = 1.0$$
+
+#### 3. Log-Odds Scoring Formula
+The position-specific log-odds score $S_{i, a}$ evaluating residue $a$ at column $i$ is:
+$$S_{i, a} = \lambda \cdot \log_b \left( \frac{P_{i, a}}{q_a} \right)$$
+where:
+- $b$ is the logarithm base ($b = 2.0$ for bits; $b = e$ for natural units).
+- $\lambda$ is a scaling multiplier ($\lambda = 2.0$ yields half-bits; $\lambda = 3.0$ yields third-bits).
+
+#### 4. Ambiguous Residue Scoring
+For non-standard or ambiguous residues:
+- `'B'` (Asx): $S_{i, B} = 0.5 \cdot S_{i, N} + 0.5 \cdot S_{i, D}$
+- `'Z'` (Glx): $S_{i, Z} = 0.5 \cdot S_{i, Q} + 0.5 \cdot S_{i, E}$
+- `'X'` (Unknown): Evaluated as the expected log-odds under the background distribution:
+  $$S_{i, X} = \sum_{a \in \Sigma} q_a \cdot S_{i, a}$$
+
+---
+
+### 8.3 Worked Numerical Example (Viva Preparation)
+
+Consider a toy alignment of $M = 3$ sequences at column $i = 0$:
+- Observed residues: `H`, `H`, `H` ($c_{0, H} = 3$, all other $c_{0, a} = 0$).
+- Background: Uniform distribution $q_a = \frac{1}{20} = 0.05$ for all $a \in \Sigma$.
+- Pseudocount weight: $\alpha = 1.0$. Scaling: $\lambda = 2.0$, base $b = 2.0$ (half-bits).
+
+#### Step 1: Effective Depth
+$$N_0 = \sum_{a \in \Sigma} c_{0, a} = 3$$
+
+#### Step 2: Regularized Probabilities
+- For Histidine ($H$):
+  $$P_{0, H} = \frac{c_{0, H} + \alpha \cdot q_H}{N_0 + \alpha} = \frac{3 + 1.0 \times 0.05}{3 + 1.0} = \frac{3.05}{4.0} = 0.7625$$
+- For Alanine ($A$) or any unobserved residue:
+  $$P_{0, A} = \frac{0 + 1.0 \times 0.05}{3 + 1.0} = \frac{0.05}{4.0} = 0.0125$$
+- Verification of sum:
+  $$\sum_{a \in \Sigma} P_{0, a} = 0.7625 + 19 \times 0.0125 = 0.7625 + 0.2375 = 1.000 \quad \checkmark$$
+
+#### Step 3: Log-Odds Scores
+- For Histidine ($H$):
+  $$\frac{P_{0, H}}{q_H} = \frac{0.7625}{0.05} = 15.25$$
+  $$S_{0, H} = 2.0 \cdot \log_2(15.25) = 2.0 \times 3.9307 = +7.861 \text{ half-bits}$$
+- For Alanine ($A$):
+  $$\frac{P_{0, A}}{q_A} = \frac{0.0125}{0.05} = 0.25$$
+  $$S_{0, A} = 2.0 \cdot \log_2(0.25) = 2.0 \times (-2.0) = -4.000 \text{ half-bits}$$
+
+*Explanation for Viva:* Conserved Histidine is rewarded with a strong positive score of $+7.86$ half-bits, while unobserved residues are penalized with $-4.00$ half-bits.
+
+---
+
+### 8.4 Profile-to-Sequence Dynamic Programming
+When aligning an unaligned query sequence $Y = (y_1, \dots, y_n)$ against a PSSM profile of length $m$:
+- Row dimension: Profile positions $i \in \{1, \dots, m\}$.
+- Column dimension: Query residues $j \in \{1, \dots, n\}$.
+- Column substitution score:
+  $$s(i, y_j) = S_{i-1, y_j}$$
+
+#### Global Profile Alignment (Gotoh Affine Gaps):
+$$M(i, j) = S_{i-1, y_j} + \max\left( M(i-1, j-1), \, I_x(i-1, j-1), \, I_y(i-1, j-1) \right)$$
+$$I_x(i, j) = \max\left( M(i-1, j) - g_{\text{open}}, \, I_x(i-1, j) - g_{\text{extend}} \right) \quad \text{[Profile deletion / gap in query]}$$
+$$I_y(i, j) = \max\left( M(i, j-1) - g_{\text{open}}, \, I_y(i, j-1) - g_{\text{extend}} \right) \quad \text{[Query insertion / gap in profile]}$$
+
+#### Local Profile Alignment (Smith–Waterman):
+Floor all states at 0.0. The optimal local alignment begins at $(i^*, j^*) = \arg\max_{i, j} M(i, j)$ and terminates upon reaching 0.
+
+#### Score Verification Invariant:
+$$\text{Recomputed Score} = \sum_{\text{aligned columns}} S_{i, y_j} - \sum_{\text{gap runs}} \left( g_{\text{open}} + (k - 1) g_{\text{extend}} \right)$$
+Must identically match dynamic programming terminal score within $10^{-4}$.
+
+---
+
+### 8.5 Comparison: Substitution Matrix vs. PSSM vs. Profile HMM
+
+| Feature | Pairwise Matrix (BLOSUM62) | PSSM (ProteinAlign Lab) | Profile HMM (HMMER) |
+| :--- | :--- | :--- | :--- |
+| **Position Dependency** | Uniform (same for all positions) | Position-specific substitution | Position-specific substitution & position-specific gap rates |
+| **Model Type** | Log-odds score lookup | Additive scoring profile matrix | Full probabilistic graphical model (state transitions) |
+| **Gap Penalties** | Constant $d, e$ everywhere | Constant $d, e$ (or profile-guided) | Position-specific insertion/deletion probabilities |
+| **Mathematical Engine** | Dynamic Programming (NW / SW) | Dynamic Programming (NW / SW) | Viterbi / Forward-Backward algorithms |
+| **Sensitivity** | Good for $>30\%$ identity | Excellent for remote homologs ($15\text{--}30\%$) | Gold standard for remote homologs ($<20\%$) |
+| **Complexity** | $\mathcal{O}(m \cdot n)$ | $\mathcal{O}(m \cdot n)$ | $\mathcal{O}(m \cdot n)$ with larger state machine |
 
 ---
 

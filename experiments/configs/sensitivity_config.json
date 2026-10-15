@@ -1,0 +1,14 @@
+{
+  "description": "Parameter sensitivity configuration for gap penalties and PSSM pseudocounts (RQ5)",
+  "dataset_summary_path": "results/tables/dataset_validation_summary.json",
+  "split": "validation",
+  "target_files": ["sup_003", "sup_005", "sup_008", "twi_028", "twi_050"],
+  "max_pairs_per_file": 3,
+  "matrix": "BLOSUM62",
+  "gap_open_grid": [6.0, 8.0, 10.0, 12.0, 14.0, 16.0],
+  "gap_extend_grid": [0.5, 1.0, 1.5, 2.0, 3.0],
+  "default_gap_open": 10.0,
+  "default_gap_extend": 1.0,
+  "pssm_alpha_grid": [0.1, 0.5, 1.0, 2.0, 5.0, 10.0],
+  "output_csv": "results/tables/sensitivity_results.csv"
+}

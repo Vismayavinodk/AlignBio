@@ -170,7 +170,74 @@ print(f"Target Slice [{result.start2}:{result.end2}]: '{target[result.start2:res
 
 ---
 
-## 6. Visualizing Alignments
+## 7. Position-Specific Scoring Matrices (PSSMs) and Profile Alignment
+
+A PSSM captures position-specific evolutionary conservation across a homologous protein family:
+
+### 7.1 Constructing a Profile and PSSM from an MSA
+
+```python
+from proteinalign import build_profile_from_msa, PSSM
+
+# Define a multiple sequence alignment (MSA) of related proteins
+msa = {
+    "prot_A": "HEAGAWG",
+    "prot_B": "HEAPAWG",
+    "prot_C": "HEAGAWA",
+}
+
+# 1. Build a validated frequency Profile with pseudocount regularization
+profile = build_profile_from_msa(msa, name="test_family", pseudocount_weight=1.0)
+print(f"Profile Length : {profile.alignment_length}")
+print(f"Num Sequences  : {profile.num_sequences}")
+print(f"Consensus      : {profile.consensus}")
+
+# 2. Build a PSSM with half-bit scaling (scale = 2.0, base = 2.0)
+pssm = PSSM.from_profile(profile, scale=2.0)
+print(f"Score for 'H' at position 0: {pssm.score(0, 'H'):.2f} half-bits")
+print(f"Score for 'D' at position 0: {pssm.score(0, 'D'):.2f} half-bits")
+```
+
+### 7.2 Profile-to-Sequence Global Alignment
+
+```python
+# Align a separate held-out query sequence against the profile
+query_seq = "HEAPAWG"
+result = pssm.align_global(query_seq, gap_open=10.0, gap_extend=1.0)
+
+print(f"Global Alignment Score: {result.score:.1f}")
+print("Profile Consensus     :", result.seq1_aligned)
+print("Aligned Query         :", result.seq2_aligned)
+
+# Verify score by independent column-wise summation
+assert pssm.recompute_score(result) == result.score
+```
+
+### 7.3 Data Leakage Safeguards (Held-Out Evaluation)
+
+```python
+from proteinalign import split_msa_train_test, DataLeakageError
+
+# Perform a valid leave-one-out train/test split on an MSA
+train_msa, test_query = split_msa_train_test(msa, test_id="prot_A")
+
+# Train profile strictly on remaining training sequences
+train_pssm = PSSM.from_msa(train_msa, name="trained_profile")
+
+# Attempting to align a training sequence triggers an error unless allow_leakage=True
+try:
+    train_pssm.align_global("HEAGAWG", query_id="prot_B")
+except DataLeakageError as e:
+    print("Caught expected leakage error:", e)
+
+# Aligning the true held-out query succeeds cleanly
+res_held_out = train_pssm.align_global(test_query, query_id="prot_A")
+print(f"Held-out score: {res_held_out.score:.1f}")
+```
+
+---
+
+## 8. Visualizing Alignments
 
 You can format alignment outputs for clear terminal display using `format_alignment`:
 
@@ -183,13 +250,19 @@ print(format_alignment(result, line_width=60))
 
 ---
 
-## 7. How to Run the Unit Tests
+## 9. How to Run the Unit Tests
 
-The test suite uses `pytest` and covers normal cases, edge cases, invariants, and independent validation against Biopython (94 automated tests):
+The test suite uses `pytest` and covers normal cases, edge cases, invariants, and independent validation against Biopython (127 automated tests):
 
 ```bash
-# Run all 94 tests
+# Run all 127 tests
 pytest -v
+
+# Run only profile tests
+pytest tests/test_profiles.py -v
+
+# Run only PSSM tests
+pytest tests/test_pssm.py -v
 
 # Run only affine gap tests
 pytest tests/test_affine_gaps.py -v

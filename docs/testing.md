@@ -88,18 +88,53 @@ Alignment results are validated against `Bio.Align.PairwiseAligner`:
 - **Affine Global Alignment under PAM250**: Score matches Biopython within $10^{-4}$ ($g_{\text{open}} = 11.0, g_{\text{extend}} = 1.0$).
 - **Affine Local Alignment**: Score matches Biopython within $10^{-4}$ for motif isolation and internal gap insertion.
 
+### 3.5 Profile Construction and Regularization Tests (`tests/test_profiles.py`)
+- **Alignment Transpose & Validation**:
+  - Rejection of empty alignments, length mismatches, and invalid non-amino acid characters.
+- **Observed Column Counts & Gap Policy**:
+  - Gaps (`'-'`, `'.'`) are excluded from amino acid count denominators ($N_i$).
+  - Ambiguous residues (`'B'`, `'Z'`, `'X'`) are distributed fractionally according to documented policy.
+- **Pseudocount Regularization & Normalization**:
+  - Strict probability normalization ($\sum_a P_{i, a} = 1.0$).
+  - Analytical verification of regularized probabilities: $P_{i, a} = (c_{i, a} + \alpha q_a) / (N_i + \alpha)$.
+  - All-gap columns default smoothly to the background prior $q_a$.
+- **Data Leakage Safeguards**:
+  - `split_msa_train_test`: Validates held-out target extraction and un-gapping.
+  - `validate_no_data_leakage`: Detects query ID overlap and raises `DataLeakageError`.
+
+### 3.6 PSSM Log-Odds Scoring and Profile Alignment Tests (`tests/test_pssm.py`)
+- **Analytical Log-Odds Score Verification**:
+  - Hand-calculated scores under uniform and Robinson background distributions.
+  - Ambiguous residue scoring (`B`, `Z`, `X`).
+  - Score scaling ($\lambda = 1.0, 2.0, 3.0$) and logarithm bases ($2.0, e, 10.0$).
+- **Profile-to-Sequence Global Alignment**:
+  - Global linear and Gotoh 3-state affine dynamic programming.
+  - Reconstruction invariants and length constraints.
+- **Profile-to-Sequence Local Alignment**:
+  - Smith–Waterman motif isolation from divergent flanking sequences.
+  - Affine internal indel handling and coordinate slice matching.
+- **Score Recomputation Invariant**:
+  - `pssm.recompute_score(res) == res.score` directly verifies DP matrix scores against reconstructed alignments.
+- **Data Leakage Prevention**:
+  - Alignment engine raises `DataLeakageError` when query sequence ID belongs to training MSA without `allow_leakage=True`.
+
 ---
 
 ## 4. Test Execution Instructions
 
-Run the complete test suite (94 passing tests):
+Run the complete test suite (127 passing tests):
 ```bash
 pytest tests/ -v
 ```
 
-Run only affine-gap tests:
+Run only profile construction tests:
 ```bash
-pytest tests/test_affine_gaps.py -v
+pytest tests/test_profiles.py -v
+```
+
+Run only PSSM scoring and profile alignment tests:
+```bash
+pytest tests/test_pssm.py -v
 ```
 
 Run Biopython independent cross-validation:

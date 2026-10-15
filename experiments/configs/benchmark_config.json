@@ -1,0 +1,15 @@
+{
+  "description": "Benchmark evaluation configuration across MU-SABRE test split for RQ1-RQ4",
+  "dataset_summary_path": "results/tables/dataset_validation_summary.json",
+  "catalog_path": "results/tables/dataset_files_catalog.csv",
+  "split": "test",
+  "max_pairs_per_file": 6,
+  "random_seed": 42,
+  "linear_gap_penalty": 8.0,
+  "affine_gap_open": 10.0,
+  "affine_gap_extend": 1.0,
+  "matrices": ["BLOSUM62", "PAM250"],
+  "pssm_pseudocount": 1.0,
+  "pssm_scale": 2.0,
+  "output_csv": "results/tables/benchmark_results.csv"
+}

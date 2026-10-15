@@ -1,5 +1,4 @@
 """ProteinAlign Lab — Interactive Demonstration Script.
-
 Run this script directly:
     python demo.py
 """
@@ -12,6 +11,10 @@ from proteinalign import (
     PAM250,
     SubstitutionMatrix,
     format_alignment,
+    build_profile_from_msa,
+    split_msa_train_test,
+    PSSM,
+    DataLeakageError,
 )
 
 
@@ -94,6 +97,47 @@ def run_demo():
     print(f"  Seq 1: {res_aff.seq1_aligned}")
     print(f"  Seq 2: {res_aff.seq2_aligned}")
     print("  Note: Affine model groups indels into a contiguous block (----) reflecting biological loop deletion.")
+
+    # -------------------------------------------------------------
+    # 5. Position-Specific Scoring Matrices (PSSM) & Profile Alignment
+    # -------------------------------------------------------------
+    print("\n[5] Position-Specific Scoring Matrix (PSSM) & Profile Alignment")
+    print("-" * 70)
+    print("  [Note: The toy MSA below is illustrative and demonstrates mathematical mechanics]")
+
+    toy_msa = {
+        "homolog_1": "HEAGAWG",
+        "homolog_2": "HEAPAWG",
+        "homolog_3": "HEAGAWA",
+        "target_X":  "HEAPAWG",
+    }
+
+    # 1. Scientific Rigor: Split out held-out test sequence to prevent data leakage
+    train_msa, held_out_seq = split_msa_train_test(toy_msa, test_id="target_X")
+    print(f"Training MSA Homologs : {list(train_msa.keys())}")
+    print(f"Held-Out Query Target : 'target_X' -> '{held_out_seq}'")
+
+    # 2. Build Profile and PSSM with pseudocount regularization
+    profile = build_profile_from_msa(train_msa, name="demo_family", pseudocount_weight=1.0)
+    pssm = PSSM.from_profile(profile, scale=2.0)
+    print(f"Profile Consensus     : {profile.consensus} (Length: {profile.alignment_length})")
+    print(f"PSSM Score for 'H' at pos 0 (conserved)  : +{pssm.score(0, 'H'):.2f} half-bits")
+    print(f"PSSM Score for 'D' at pos 0 (unobserved) : {pssm.score(0, 'D'):.2f} half-bits")
+
+    # 3. Align held-out query against profile
+    res_pssm = pssm.align_global(held_out_seq, gap_open=10.0, gap_extend=1.0, query_id="target_X")
+    recomputed = pssm.recompute_score(res_pssm)
+
+    print(f"\nProfile-to-Sequence Global Score: {res_pssm.score:.2f}")
+    print(f"  Profile : {res_pssm.seq1_aligned}")
+    print(f"  Query   : {res_pssm.seq2_aligned}")
+    print(f"  Independent Score Recomputation : {recomputed:.2f} (Verified match: {abs(recomputed - res_pssm.score) < 1e-4})")
+
+    # 4. Demonstrate Data Leakage Safeguard
+    try:
+        pssm.align_global(held_out_seq, query_id="homolog_1")
+    except DataLeakageError:
+        print("  Data Leakage Safeguard: Successfully prevented evaluating training ID 'homolog_1'!")
 
     print("\n" + "=" * 70)
     print("Demo completed successfully! To run automated tests, use: pytest")
